@@ -1,0 +1,18 @@
+import {Client,GatewayIntentBits,Events,EmbedBuilder} from "discord.js";
+import {config,validateConfig} from "./config.js"; import {scanAttachment} from "./scanner.js"; import {saveScan,loadHistory} from "./storage.js"; import {buildScanEmbed,buildButtons} from "./embeds.js";
+validateConfig(); const client=new Client({intents:[GatewayIntentBits.Guilds]}); const owner=id=>config.ownerIds.length===0||config.ownerIds.includes(id);
+client.once(Events.ClientReady,c=>console.log(`✅ ${c.user.tag} está online. Servidores: ${c.guilds.cache.size}`));
+client.on(Events.InteractionCreate,async i=>{try{
+if(i.isChatInputCommand()){
+if(i.commandName==="scan"){const a=i.options.getAttachment("arquivo",true);await i.deferReply();const r=await scanAttachment(a,config.maxFileBytes);await saveScan(r);return i.editReply({embeds:[buildScanEmbed(r,config.scannerName)],components:[buildButtons(r.id)]})}
+if(i.commandName==="historico"){const h=await loadHistory();if(!h.length)return i.reply("📚 Ainda não existe nenhuma análise.");return i.reply({embeds:[new EmbedBuilder().setTitle("📚 Histórico").setDescription(h.slice(0,10).map((x,n)=>`${n+1}. ${x.findings.length?"🚨":"✅"} \`${x.fileName}\` — ${x.findings.length} padrão(ões) — <t:${Math.floor(new Date(x.createdAt).getTime()/1000)}:R>`).join("\n"))]})}
+if(i.commandName==="suspeitos"){if(!owner(i.user.id))return i.reply({content:"🔐 Sem permissão.",ephemeral:true});const fs=await import("node:fs/promises"),p=new URL("../config/suspects.json",import.meta.url),ss=JSON.parse(await fs.readFile(p,"utf8")),sub=i.options.getSubcommand();
+if(sub==="listar")return i.reply({embeds:[new EmbedBuilder().setTitle("🚨 Padrões").setDescription(ss.length?ss.map((s,n)=>`${n+1}. **${s.name}** — \`${s.pattern}\` — ${s.severity}`).join("\n"):"Nenhum")]});
+if(sub==="adicionar"){const name=i.options.getString("nome",true),pattern=i.options.getString("padrao",true),severity=i.options.getString("severidade",true);try{new RegExp(pattern)}catch{return i.reply({content:"❌ Regex inválida.",ephemeral:true})}ss.push({name,pattern,severity,description:"Padrão adicionado pelo administrador."});await fs.writeFile(p,JSON.stringify(ss,null,2)+"\n");return i.reply("✅ Padrão adicionado.")} 
+const name=i.options.getString("nome",true),next=ss.filter(s=>s.name.toLowerCase()!==name.toLowerCase());if(next.length===ss.length)return i.reply({content:"❌ Padrão não encontrado.",ephemeral:true});await fs.writeFile(p,JSON.stringify(next,null,2)+"\n");return i.reply("🗑️ Padrão removido.")}}
+if(i.isButton()){const [action,id]=i.customId.split(":"),r=(await loadHistory()).find(x=>x.id===id);if(!r)return i.reply({content:"⚠️ Relatório não encontrado.",ephemeral:true});
+if(action==="report")return i.reply({content:`**Arquivo:** \`${r.fileName}\`\n**Status:** ${r.status}\n**Linhas:** ${r.lines}\n**Pacotes:** ${r.packagesFound}\n**Padrões:** ${r.findings.length}`,ephemeral:true});
+if(action==="advanced")return i.reply({embeds:[new EmbedBuilder().setTitle("🔬 Advanced").setDescription(r.interestingLines.length?r.interestingLines.slice(0,15).map(x=>"`"+x.slice(0,180)+"`").join("\n"):"Nenhuma linha relevante.")],ephemeral:true});
+if(action==="private"){if(!owner(i.user.id))return i.reply({content:"🔐 Área privada.",ephemeral:true});return i.reply({content:`🔐 **Provas Privadas — ${r.fileName}**\n\n${(r.interestingLines.join("\n")||"Nenhuma evidência.").slice(0,1900)}`,ephemeral:true})}}
+}catch(e){console.error(e);const m="❌ Erro: "+(e?.message||"desconhecido");if(i.deferred||i.replied)await i.editReply({content:m,embeds:[],components:[]}).catch(()=>{});else await i.reply({content:m,ephemeral:true}).catch(()=>{})}});
+client.login(config.token);

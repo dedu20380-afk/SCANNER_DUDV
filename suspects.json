@@ -1,0 +1,4 @@
+[
+  {"name":"Regedit / Painel","pattern":"com\\.painel\\.regedit","severity":"ALTO","description":"Pacote associado à entrada configurada para investigação."},
+  {"name":"Shizuku","pattern":"moe\\.shizuku\\.privileged\\.api","severity":"MÉDIO","description":"Pacote Shizuku encontrado no log."}
+]
